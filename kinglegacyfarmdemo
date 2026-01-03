@@ -1,0 +1,545 @@
+--// SERVICES
+local Players = game:GetService("Players")
+local Player = Players.LocalPlayer
+local VIM = game:GetService("VirtualInputManager")
+local RunService = game:GetService("RunService")
+local RS = game:GetService("ReplicatedStorage")
+local TeleportService = game:GetService("TeleportService")
+local PlayerGui = Player:WaitForChild("PlayerGui")
+local CoreGui = game:GetService("CoreGui")
+
+--// GLOBAL
+_G.AutoFarmLevel = false
+_G.AutoClick = false
+_G.WeaponMode = "Melee"
+_G.Distance = 8
+
+
+local Mob = nil
+local IslandCF = nil
+local TpIsland = false
+local LastMob = nil
+local HakiEnabled = false
+local LayEnabled = false
+local HakiPending = false
+local NeedEnableHaki = false
+
+--// CHECK LEVEL
+local function checklevel()
+    local lv = Player.PlayerStats.lvl.Value
+
+    if lv <= 9 then
+        Mob = "Soldier"
+        IslandCF = CFrame.new(-2014,73,-4609)
+    elseif lv <= 19 then
+        Mob = "Clown Pirate"
+        IslandCF = CFrame.new(-2014,73,-4609)
+    elseif lv <= 29 then
+        Mob = "Smoky"
+        IslandCF = CFrame.new(-2014,73,-4609)
+    elseif lv <= 49 then
+        Mob = "Tashi"
+        IslandCF = CFrame.new(-2014,73,-4609)
+    elseif lv <= 74 then
+        Mob = "Clown Swordman"
+        IslandCF = CFrame.new(-684.8455810546875, 51.26118850708008, -3445.970947265625)
+    elseif lv <= 99 then
+        Mob = "The Clown"
+        IslandCF = CFrame.new(-684.8455810546875, 51.26118850708008, -3445.970947265625)
+    else
+        Mob = nil
+        IslandCF = nil
+    end
+
+    if LastMob ~= Mob then
+        TpIsland = false
+        LastMob = Mob
+    end
+end
+
+--// QUEST CHECK (FIX)
+local function checkquest()
+    local q = PlayerGui:FindFirstChild("QuestGUI")
+    return q and q.Enabled
+end
+
+local function getquest()
+    local lv = Player.PlayerStats.lvl.Value
+    local questName
+
+    if lv <= 9 then
+        questName = "Kill 4 Soldiers"
+    elseif lv <= 19 then
+        questName = "Kill 5 Clown Pirates"
+    elseif lv <= 29 then
+        questName = "Kill 1 Smoky"
+    elseif lv <= 49 then
+        questName = "Kill 1 Tashi"
+    elseif lv <= 74 then
+        questName = "Kill 6 Clown Swordman"
+    elseif lv <= 99 then
+        questName = "Kill 1 The Clown"
+    end
+
+    if questName then
+        RS.Chest.Remotes.Functions.Quest:InvokeServer("take", questName)
+    end
+end
+
+--// FIND MOB (FIX)
+local function findmob()
+    local folder = workspace:FindFirstChild("Monster")
+    if not folder or not Mob then return end
+
+    for _, f in pairs(folder:GetChildren()) do
+        for _, m in pairs(f:GetChildren()) do
+            if m:IsA("Model")
+            and m:FindFirstChild("Humanoid")
+            and m:FindFirstChild("HumanoidRootPart")
+            and m.Humanoid.Health > 0
+            and string.find(m.Name, Mob, 1, true) then
+                return m
+            end
+        end
+    end
+end
+
+--// TELEPORT (FIX)
+local function tp(cf)
+    local char = Player.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    hrp.AssemblyLinearVelocity = Vector3.zero
+    hrp.AssemblyAngularVelocity = Vector3.zero
+    hrp.CFrame = cf
+end
+
+--// LOCK BODY (NO RUNG)
+local function enableLay()
+    local char = Player.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChild("Humanoid")
+    if not hrp or not hum then return end
+
+    hum.AutoRotate = false
+    hum.PlatformStand = true
+    hum:ChangeState(Enum.HumanoidStateType.Physics)
+
+    if not hrp:FindFirstChild("AF_BV") then
+        local bv = Instance.new("BodyVelocity", hrp)
+        bv.Name = "AF_BV"
+        bv.MaxForce = Vector3.new(1e7,1e7,1e7)
+        bv.Velocity = Vector3.zero
+    end
+
+    if not hrp:FindFirstChild("AF_BG") then
+        local bg = Instance.new("BodyGyro", hrp)
+        bg.Name = "AF_BG"
+        bg.MaxTorque = Vector3.new(1e7,1e7,1e7)
+        bg.P = 2e5
+        bg.CFrame = hrp.CFrame
+    end
+end
+
+--// UNLOCK BODY
+local function disableLay()
+    LayEnabled = false
+    
+    local char = Player.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChild("Humanoid")
+    if not hrp or not hum then return end
+
+    if hrp:FindFirstChild("AF_BV") then hrp.AF_BV:Destroy() end
+    if hrp:FindFirstChild("AF_BG") then hrp.AF_BG:Destroy() end
+
+    hum.PlatformStand = false
+    hum.AutoRotate = true
+    hum:ChangeState(Enum.HumanoidStateType.Running)
+end
+
+--// HAKI
+local function RequestEnableHaki()
+    if not _G.AutoFarmLevel then return end
+    if HakiEnabled or HakiPending then return end
+
+    local char = Player.Character
+    if not char then return end
+    local hum = char:FindFirstChild("Humanoid")
+    if not hum or hum.Health <= 0 then return end
+
+    HakiPending = true
+
+    task.delay(1, function()
+        HakiPending = false
+
+        if not _G.AutoFarmLevel then return end
+        if not Player.Character then return end
+        if Player.Character.Humanoid.Health <= 0 then return end
+        if HakiEnabled then return end
+
+        RS.Chest.Remotes.Events.Armament:FireServer()
+        HakiEnabled = true
+    end)
+end
+
+--// AUTO CLICK
+task.spawn(function()
+    while task.wait(0.15) do
+        if _G.AutoClick then
+            VIM:SendMouseButtonEvent(0,0,0,true,game,0)
+            task.wait()
+            VIM:SendMouseButtonEvent(0,0,0,false,game,0)
+        end
+    end
+end)
+
+local function equipByToolTip(tip)
+    local char = Player.Character
+    if not char then return end
+
+    local tool = char:FindFirstChildOfClass("Tool")
+    if tool and tool.ToolTip == tip then return end
+
+    for _, v in pairs(Player.Backpack:GetChildren()) do
+        if v:IsA("Tool") and v.ToolTip == tip then
+            v.Parent = char
+            return
+        end
+    end
+end
+
+local function equipWeapon()
+    if _G.WeaponMode == "Melee" then
+        equipByToolTip("Combat")
+    elseif _G.WeaponMode == "Sword" then
+        equipByToolTip("Sword")
+    elseif _G.WeaponMode == "Fruit" then
+        equipByToolTip("Fruit Power")
+    end
+end
+
+--// RESET HAKI KHI RESPAWN
+Player.CharacterAdded:Connect(function(char)
+    HakiEnabled = false
+    HakiPending = false
+    TpIsland = false
+
+    task.delay(0.5, function()
+        RequestEnableHaki()
+    end)
+
+    char:WaitForChild("Humanoid").Died:Connect(function()
+        HakiEnabled = false
+        HakiPending = false
+    end)
+end)
+
+--// AUTO FARM LOOP (FIXED)
+RunService.Heartbeat:Connect(function()
+    if not _G.AutoFarmLevel then return end
+    
+    equipWeapon()
+    enableLay()
+    checklevel()
+
+    if IslandCF and not TpIsland then
+        TpIsland = true
+        disableLay()
+        task.wait(0.2)
+        tp(IslandCF * CFrame.new(0,30,0))
+        task.wait(0.2)
+        return
+    end
+
+    if not checkquest() then
+        getquest()
+    end
+
+    local mob = findmob()
+    if mob then
+        mob.Humanoid.WalkSpeed = 0
+        local cf = mob.HumanoidRootPart.CFrame
+            * CFrame.new(0,_G.Distance,0)
+            * CFrame.Angles(math.rad(-90),0,0)
+
+        tp(cf)
+
+        local hrp = Player.Character.HumanoidRootPart
+        if hrp:FindFirstChild("AF_BG") then
+            hrp.AF_BG.CFrame = cf
+        end
+    end
+end)
+
+--// REMOVE OLD GUI
+pcall(function()
+    local oldGui = PlayerGui:FindFirstChild("MobileToggleUI")
+    if oldGui then oldGui:Destroy() end
+end)
+  
+--// FIND DISCORD UI
+local function GetUI()
+    for _, v in pairs(CoreGui:GetDescendants()) do
+        if v:IsA("ScreenGui") and v.Name:lower():find("discord") then
+            return v
+        end
+    end
+end
+
+--// TOGGLE UI
+local UIvisible = true
+local function ToggleUI()
+    local gui = GetUI()
+    if gui then
+        UIvisible = not UIvisible
+        gui.Enabled = UIvisible
+    end
+end
+
+--// MOBILE TOGGLE BUTTON
+local ToggleGui = Instance.new("ScreenGui")
+ToggleGui.Name = "MobileToggleUI"
+ToggleGui.Parent = PlayerGui
+ToggleGui.ResetOnSpawn = false
+ToggleGui.DisplayOrder = 9999
+ToggleGui.IgnoreGuiInset = true
+
+local ToggleButton = Instance.new("TextButton")
+ToggleButton.Parent = ToggleGui
+ToggleButton.Size = UDim2.new(0,55,0,55)
+ToggleButton.Position = UDim2.new(0,15,0.5,-30)
+ToggleButton.Text = "UI"
+ToggleButton.TextSize = 26
+ToggleButton.BackgroundColor3 = Color3.fromRGB(25,25,25)
+ToggleButton.TextColor3 = Color3.fromRGB(255,255,255)
+ToggleButton.BorderSizePixel = 0
+ToggleButton.Active = true
+ToggleButton.Draggable = true
+
+Instance.new("UICorner", ToggleButton).CornerRadius = UDim.new(1,0)
+local stroke = Instance.new("UIStroke", ToggleButton)
+stroke.Thickness = 1.5
+stroke.Color = Color3.fromRGB(120,120,120)
+
+ToggleButton.MouseButton1Click:Connect(ToggleUI)
+
+for _, v in ipairs(CoreGui:GetDescendants()) do
+    if v:IsA("ScreenGui") and v.Name:lower():find("discord") then
+        v:Destroy()
+    end
+end
+
+--// LOAD DISCORD LIB
+local DiscordLib = loadstring(game:HttpGet(
+    "https://raw.githubusercontent.com/dawid-scripts/UI-Libs/main/discord%20lib.txt"
+))()
+
+local window = DiscordLib:Window("Script King Legacy Update 1.0")
+
+local Information = window:Server(
+     "Information 📄",
+     "rbxassetid://4871684504"
+)
+
+local Main = window:Server(
+     "Main 📃",
+     "rbxassetid://11570895459"
+)
+
+local Setting = window:Server(
+     "Setting ⚙️",
+     "rbxassetid://18801194936"
+)
+
+local tab = Information:Channel("Information 📄")
+
+tab:Label("Welcome to Script Made By Shadow Hub!!!")
+tab:Label("🔥 Script King Legacy ✨:")
+tab:Label("Auto Farm Level 💥")
+tab:Label("Auto Stats ⭐️")
+
+tab:Button("Copy LinkDiscord", function()
+  setclipboard("https://discord.gg/uZnVWjzU4")
+  DiscordLib:Notification(
+  "Copy Link Success ✅",
+  "Script Made By Shadow Hub",
+  "OK"
+  )
+end)
+
+local tab2 = Main:Channel("Auto Farm Level ✨")
+tab2:Label("Auto Farm ⚡️")
+
+tab2:Toggle("Auto Farm Level ☄️", false, function(v)
+    _G.AutoFarmLevel = v
+    _G.AutoClick = v
+
+    if v then
+        TpIsland = false
+        HakiEnabled = false
+        HakiPending = false
+
+        task.delay(0.5, function()
+            RequestEnableHaki()
+        end)
+    else
+        TpIsland = false
+        _G.AutoClick = false
+        HakiEnabled = false
+        HakiPending = false
+        disableLay()
+    end
+end)
+
+tab2:Label("Weapons ⚔️")
+tab2:Dropdown("Weapons", {
+    "Melee",
+    "Sword",
+    "Fruit"
+}, function(lol)
+    _G.WeaponMode = lol
+end)
+
+tab2:Label("Auto Skill")
+tab2:Toggle("Auto X", false, function(lol)
+    _G.AutoX = lol
+
+    task.spawn(function()
+        while _G.AutoX do
+            VIM:SendKeyEvent(true, Enum.KeyCode.X, false, game)
+            task.wait(0.05)
+            VIM:SendKeyEvent(false, Enum.KeyCode.X, false, game)
+            task.wait(0.5) -- tốc độ spam
+        end
+    end)
+end)
+
+tab2:Toggle("Auto Z", false, function(lol)
+    _G.AutoZ = lol
+
+    task.spawn(function()
+        while _G.AutoZ do
+            VIM:SendKeyEvent(true, Enum.KeyCode.Z, false, game)
+            task.wait(0.05)
+            VIM:SendKeyEvent(false, Enum.KeyCode.Z, false, game)
+            task.wait(0.5) -- tốc độ spam
+        end
+    end)
+end)
+
+tab2:Toggle("Auto C", false, function(lol)
+    _G.AutoC = lol
+
+    task.spawn(function()
+        while _G.AutoC do
+            VIM:SendKeyEvent(true, Enum.KeyCode.C, false, game)
+            task.wait(0.05)
+            VIM:SendKeyEvent(false, Enum.KeyCode.C, false, game)
+            task.wait(0.5) -- tốc độ spam
+        end
+    end)
+end)
+
+tab2:Toggle("Auto V", false, function(lol)
+    _G.AutoV = lol
+
+    task.spawn(function()
+        while _G.AutoV do
+            VIM:SendKeyEvent(true, Enum.KeyCode.V, false, game)
+            task.wait(0.05)
+            VIM:SendKeyEvent(false, Enum.KeyCode.V, false, game)
+            task.wait(0.5) -- tốc độ spam
+        end
+    end)
+end)
+
+tab2:Label("---end---")
+
+local tab2_1 = Main:Channel("Up Stats 📊")
+
+tab2_1:Label("Auto Stats 📊")
+tab2_1:Toggle("Melee 👊", false, function(lol)
+  _G.AutoMelee = lol
+ 
+ task.spawn(function()
+    while _G.AutoMelee do
+    task.wait(0.5)
+       Player.PlayerGui.MainGui.StarterFrame.StatsFrame.RemoteEvent:FireServer("Melee",100)
+      end
+   end)
+end)
+
+tab2_1:Toggle("Health 💚", false, function(lol)
+  _G.AutoHealth = lol
+  
+  task.spawn(function()
+     while _G.AutoHealth do
+     task.wait(0.5)
+     Player.PlayerGui.MainGui.StarterFrame.StatsFrame.RemoteEvent:FireServer("Defense",100)
+  end
+ end)
+end)
+  
+tab2_1:Toggle("Sword 🗡️", false, function(lol)
+  _G.AutoSword = lol
+  
+  task.spawn(function()
+     while _G.AutoSword do
+     task.wait(0.5)
+     Player.PlayerGui.MainGui.StarterFrame.StatsFrame.RemoteEvent:FireServer("Sword",100)
+  end
+ end)
+end)
+
+tab2_1:Toggle("Fruit 🍎", false, function(lol)
+  _G.AutoFruit = lol
+  
+  task.spawn(function()
+     while _G.AutoFruit do
+     task.wait(0.5)
+     Player.PlayerGui.MainGui.StarterFrame.StatsFrame.RemoteEvent:FireServer("Fruit",100)
+  end
+ end)
+end)
+
+local tab3 = Setting:Channel("Setting ⚙️")
+tab3:Label("Setting ⚙️")
+
+tab3:Button("Dex", function()
+   loadstring(game:HttpGet(
+        "https://rawscripts.net/raw/Universal-Script-Dex-mobile-by-Redz-25499"))()
+end)
+tab3:Button("Inf Yield", function()
+   loadstring(game:HttpGet('https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source'))()
+end)
+tab3:Button("Remote Spy", function()
+   loadstring(game:HttpGet("https://rawscripts.net/raw/Universal-Script-RemoteSpy-v3-33731"))()
+end)
+tab3:Button("Remote Spy Pro", function()
+   loadstring(game:HttpGet("https://github.com/notpoiu/cobalt/releases/latest/download/Cobalt.luau"))()
+end)
+tab3:Button("Rejoin Server", function()
+   TeleportService:Teleport(game.PlaceId, Player)
+end)
+tab3:Button("Copy CFrame", function()
+   setclipboard(tostring(game.Players.LocalPlayer.Character.HumanoidRootPart.Position))
+end)
+tab3:Label("Setting ⚙️")
+
+tab3:Toggle("NoClip", true, function(v)
+    _G.NoClip = v
+
+    local char = Player.Character
+    if not char then return end
+
+    for _, part in pairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = not v
+        end
+    end
+end)
