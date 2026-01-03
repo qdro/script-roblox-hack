@@ -1,0 +1,57 @@
+--// REMOVE OLD GUI
+pcall(function()
+    local oldGui = PlayerGui:FindFirstChild("MobileToggleUI")
+    if oldGui then oldGui:Destroy() end
+end)
+  
+--// FIND DISCORD UI
+local function GetUI()
+    for _, v in pairs(CoreGui:GetDescendants()) do
+        if v:IsA("ScreenGui") and v.Name:lower():find("discord") then
+            return v
+        end
+    end
+end
+
+--// TOGGLE UI
+local UIvisible = true
+local function ToggleUI()
+    local gui = GetUI()
+    if gui then
+        UIvisible = not UIvisible
+        gui.Enabled = UIvisible
+    end
+end
+
+--// MOBILE TOGGLE BUTTON
+local ToggleGui = Instance.new("ScreenGui")
+ToggleGui.Name = "MobileToggleUI"
+ToggleGui.Parent = PlayerGui
+ToggleGui.ResetOnSpawn = false
+ToggleGui.DisplayOrder = 9999
+ToggleGui.IgnoreGuiInset = true
+
+local ToggleButton = Instance.new("TextButton")
+ToggleButton.Parent = ToggleGui
+ToggleButton.Size = UDim2.new(0,55,0,55)
+ToggleButton.Position = UDim2.new(0,15,0.5,-30)
+ToggleButton.Text = "UI"
+ToggleButton.TextSize = 26
+ToggleButton.BackgroundColor3 = Color3.fromRGB(25,25,25)
+ToggleButton.TextColor3 = Color3.fromRGB(255,255,255)
+ToggleButton.BorderSizePixel = 0
+ToggleButton.Active = true
+ToggleButton.Draggable = true
+
+Instance.new("UICorner", ToggleButton).CornerRadius = UDim.new(1,0)
+local stroke = Instance.new("UIStroke", ToggleButton)
+stroke.Thickness = 1.5
+stroke.Color = Color3.fromRGB(120,120,120)
+
+ToggleButton.MouseButton1Click:Connect(ToggleUI)
+
+for _, v in ipairs(CoreGui:GetDescendants()) do
+    if v:IsA("ScreenGui") and v.Name:lower():find("discord") then
+        v:Destroy()
+    end
+end
